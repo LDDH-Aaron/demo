@@ -54,11 +54,14 @@ function EnergyTriangle() {
     setTriangleData(formData);
     setShowModal(false);
     setDataSubmitted(true);
+    
+    // 将三角形数据保存到localStorage
+    localStorage.setItem('triangleData', JSON.stringify(formData));
   };
 
   const handleComplete = () => {
-    // 可以在这里存储数据到本地存储或发送到服务器
-    // localStorage.setItem('triangleData', JSON.stringify(triangleData));
+    // 存储数据到本地存储
+    localStorage.setItem('triangleData', JSON.stringify(triangleData));
     navigate('/activity-record');
   };
 
