@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import styles from '../styles/ActivityRecord.module.css';
+import { analyzeRecord } from '../services/aiService';
+import { sendChatMessage } from '../services/chatService';
+import ClearStorage from './ClearStorage';
 
 function ActivityRecord() {
   const [records, setRecords] = useState([]);
@@ -8,9 +12,10 @@ function ActivityRecord() {
   const [showTriangleData, setShowTriangleData] = useState(false);
   const [showChatPanel, setShowChatPanel] = useState(false);
   const [chatMessages, setChatMessages] = useState([
-    { id: 1, text: "你好！我是AI助手，有什么可以帮到你的吗？", isUser: false }
+    { id: 1, text: "你好！我是AI注意力管家，我可以帮你规划任务、解答疑惑和提供情感支持。有什么我能帮到你的吗？", isUser: false }
   ]);
   const [messageInput, setMessageInput] = useState('');
+  const [isLoadingChat, setIsLoadingChat] = useState(false);
   const [formData, setFormData] = useState({
     timeRange: '',
     attentionDirection: '',
@@ -33,6 +38,8 @@ function ActivityRecord() {
   // 添加编辑状态
   const [editingRecord, setEditingRecord] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
   
   const triangleRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -55,7 +62,14 @@ function ActivityRecord() {
     // 尝试从localStorage加载记录数据
     const savedRecords = localStorage.getItem('attentionRecords');
     if (savedRecords) {
-      const parsedRecords = JSON.parse(savedRecords);
+      let parsedRecords = JSON.parse(savedRecords);
+      
+      // 移除任何可能存在的triangleImpact字段
+      parsedRecords = parsedRecords.map(record => {
+        const { triangleImpact, ...restRecord } = record;
+        return restRecord;
+      });
+      
       // 加载后排序
       setRecords(sortRecordsByTime(parsedRecords));
     } else {
@@ -109,9 +123,29 @@ function ActivityRecord() {
   // 保存记录到localStorage
   useEffect(() => {
     if (records.length > 0) {
-      localStorage.setItem('attentionRecords', JSON.stringify(records));
+      // 确保保存前移除triangleImpact字段
+      const recordsToSave = records.map(record => {
+        const { triangleImpact, ...restRecord } = record;
+        return restRecord;
+      });
+      localStorage.setItem('attentionRecords', JSON.stringify(recordsToSave));
     }
   }, [records]);
+  
+  // 存储聊天记录到 localStorage
+  useEffect(() => {
+    if (chatMessages.length > 1) { // 有初始消息，所以检查长度 > 1
+      localStorage.setItem('chatMessages', JSON.stringify(chatMessages));
+    }
+  }, [chatMessages]);
+  
+  // 从 localStorage 加载聊天记录
+  useEffect(() => {
+    const savedChatMessages = localStorage.getItem('chatMessages');
+    if (savedChatMessages) {
+      setChatMessages(JSON.parse(savedChatMessages));
+    }
+  }, []);
   
   // 处理表单变化
   const handleFormChange = (e) => {
@@ -143,65 +177,79 @@ function ActivityRecord() {
   const minuteOptions = generateTimeOptions(60);
 
   // 处理提交表单
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e) => {
     e.preventDefault();
     
-    // 生成AI建议
-    const aiSuggestions = [
-      "建议设置固定的时间段来处理高专注度任务，提高工作效率。",
-      "尝试使用番茄工作法，25分钟专注工作后短暂休息。",
-      "对于容易分心的任务，可以尝试更换环境或使用白噪音。",
-      "建议在精力充沛的时段安排高难度任务，提高完成质量。",
-      "注意工作与休息的平衡，定期短暂休息有助于保持注意力。",
-      "可以尝试使用思维导图组织思路，提高思考效率。",
-      "建议减少多任务处理，专注于单一任务可以提高完成质量。",
-      "适当的体育活动有助于提高大脑活力，建议工作间隙进行短暂运动。",
-      "尝试设定明确的小目标，完成后给予自己适当奖励。",
-      "工作前花几分钟进行冥想或深呼吸，有助于集中注意力。"
-    ];
-    
-    const randomSuggestionIndex = Math.floor(Math.random() * aiSuggestions.length);
-    const aiSuggestion = aiSuggestions[randomSuggestionIndex];
-    
-    let updatedRecords;
-    
-    if (isEditing && editingRecord) {
-      // 更新现有记录
-      updatedRecords = records.map(record => 
-        record.id === editingRecord.id 
-          ? { 
-              ...record, 
-              ...formData,
-              // 保留原有的AI评分和建议
-              aiScore: record.aiScore,
-              aiSuggestion: record.aiSuggestion
-            } 
-          : record
-      );
-      setIsEditing(false);
-      setEditingRecord(null);
-    } else {
-      // 添加新记录
-      const newRecord = {
-        id: Date.now(),
+    if (!formData.attentionDirection || !formData.selfEvaluation) return;
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      console.log("准备提交记录...", formData);
+      
+      // 获取三角形数据
+      const triangleData = JSON.parse(localStorage.getItem('triangleData') || '{}');
+      
+      // 将时间范围更新到formData
+      const updatedFormData = {
         ...formData,
-        aiScore: Math.floor(Math.random() * 31) + 70, // 随机生成70-100之间的分数
-        aiSuggestion: aiSuggestion,
-        timestamp: new Date().getTime()
+        timeRange: `${startHour}:${startMinute} - ${endHour}:${endMinute}`,
+        id: isEditing && editingRecord ? editingRecord.id : Date.now().toString()
       };
-      updatedRecords = [...records, newRecord];
+      
+      console.log("开始AI分析...", updatedFormData);
+      
+      // 调用AI分析
+      const analysis = await analyzeRecord(triangleData, records, updatedFormData);
+      
+      console.log("分析结果:", analysis);
+      
+      // 创建新记录或更新现有记录
+      const recordWithAnalysis = {
+        ...updatedFormData,
+        timestamp: new Date().getTime(), // 用于排序
+        score: analysis.score,
+        aiScore: analysis.score, // 保持与现有记录兼容
+        aiSuggestion: analysis.suggestions[0], // 保持与现有记录兼容
+        suggestions: analysis.suggestions,
+        analysis: analysis.analysis
+      };
+
+      let updatedRecords;
+      
+      if (isEditing && editingRecord) {
+        // 更新现有记录
+        updatedRecords = records.map(record => 
+          record.id === editingRecord.id ? recordWithAnalysis : record
+        );
+        setIsEditing(false);
+        setEditingRecord(null);
+      } else {
+        // 添加新记录
+        updatedRecords = [...records, recordWithAnalysis];
+      }
+
+      // 更新记录列表
+      const sortedRecords = sortRecordsByTime(updatedRecords);
+      setRecords(sortedRecords);
+      localStorage.setItem('attentionRecords', JSON.stringify(sortedRecords));
+      
+      // 重置表单
+      setFormData({
+        timeRange: '',
+        attentionDirection: '',
+        selfEvaluation: ''
+      });
+      setShowAddForm(false);
+      
+      console.log("记录添加/更新成功");
+    } catch (error) {
+      console.error('记录分析错误:', error);
+      setAnalysisError('分析记录时出错，请稍后重试');
+    } finally {
+      setIsAnalyzing(false);
     }
-    
-    // 按时间排序后更新记录
-    setRecords(sortRecordsByTime(updatedRecords));
-    
-    // 重置表单
-    setFormData({
-      timeRange: '',
-      attentionDirection: '',
-      selfEvaluation: ''
-    });
-    setShowAddForm(false);
   };
 
   // 为表单添加任务选择
@@ -251,6 +299,7 @@ function ActivityRecord() {
       const updatedRecords = records.filter(record => record.id !== id);
       // 删除后不需要重新排序，因为顺序不会变
       setRecords(updatedRecords);
+      localStorage.setItem('attentionRecords', JSON.stringify(updatedRecords));
     }
   };
 
@@ -266,7 +315,7 @@ function ActivityRecord() {
   };
   
   // 处理聊天消息发送
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     
     if (!messageInput.trim()) return;
@@ -278,35 +327,68 @@ function ActivityRecord() {
       isUser: true
     };
     
-    setChatMessages(prevMessages => [...prevMessages, userMessage]);
+    const updatedMessages = [...chatMessages, userMessage];
+    setChatMessages(updatedMessages);
     setMessageInput('');
+    setIsLoadingChat(true);
     
-    // 模拟AI回复
-    setTimeout(() => {
-      const aiResponses = [
-        "我理解你的想法，可以具体说说吗？",
-        "这是一个很好的问题！建议你尝试集中注意力在一个任务上。",
-        "根据你的描述，我建议你可以使用番茄工作法来提高效率。",
-        "提高注意力的一个好方法是减少干扰源，比如手机通知。",
-        "对于复杂任务，可以尝试将其分解为小步骤，逐一完成。",
-        "工作中适当休息很重要，可以帮助大脑恢复注意力。",
-        "你做得很好！坚持记录注意力状态是提升的第一步。",
-        "有时换个环境工作也能带来新的灵感和注意力。"
-      ];
+    try {
+      // 获取注意力三角形数据
+      const triangleData = JSON.parse(localStorage.getItem('triangleData') || JSON.stringify({
+        highEnergy: { title: '重点任务示例', description: '这是一个示例高精力任务' },
+        mediumEnergy1: { title: '中等任务示例1', description: '这是第一个中等精力任务示例' },
+        mediumEnergy2: { title: '中等任务示例2', description: '这是第二个中等精力任务示例' },
+        lowEnergy1: { title: '调节任务1', description: '' },
+        lowEnergy2: { title: '调节任务2', description: '' },
+        lowEnergy3: { title: '调节任务3', description: '' }
+      }));
       
-      const randomIndex = Math.floor(Math.random() * aiResponses.length);
+      // 调用AI聊天服务
+      const aiResponse = await sendChatMessage(
+        triangleData,
+        updatedMessages,
+        records,
+        messageInput
+      );
+      
+      // 添加AI回复
       const aiMessage = {
         id: Date.now() + 1,
-        text: aiResponses[randomIndex],
+        text: aiResponse,
         isUser: false
       };
       
-      setChatMessages(prevMessages => [...prevMessages, aiMessage]);
-    }, 800);
+      setChatMessages([...updatedMessages, aiMessage]);
+    } catch (error) {
+      console.error('聊天消息处理错误:', error);
+      
+      // 添加错误消息
+      const errorMessage = {
+        id: Date.now() + 1,
+        text: "抱歉，我遇到了一些问题。请稍后再试，或者换个方式提问。",
+        isUser: false
+      };
+      
+      setChatMessages([...updatedMessages, errorMessage]);
+    } finally {
+      setIsLoadingChat(false);
+    }
+  };
+  
+  // 添加清除聊天记录的功能
+  const handleClearChat = () => {
+    if (window.confirm('确定要清除所有聊天记录吗？')) {
+      setChatMessages([
+        { id: 1, text: "你好！我是AI注意力管家，我可以帮你规划任务、解答疑惑和提供情感支持。有什么我能帮到你的吗？", isUser: false }
+      ]);
+      localStorage.removeItem('chatMessages');
+    }
   };
   
   return (
     <div className={styles.container}>
+      <ClearStorage />
+      
       <div 
         className={styles.triangleIndicator}
         onClick={() => setShowTriangleData(!showTriangleData)}
@@ -336,13 +418,22 @@ function ActivityRecord() {
       {showChatPanel && (
         <div className={styles.chatPanel}>
           <div className={styles.chatHeader}>
-            <h3>AI 助手</h3>
-            <button 
-              className={styles.closeChatButton}
-              onClick={() => setShowChatPanel(false)}
-            >
-              ×
-            </button>
+            <h3>AI 注意力管家</h3>
+            <div className={styles.chatHeaderActions}>
+              <button 
+                className={styles.clearChatButton}
+                onClick={handleClearChat}
+                title="清除聊天记录"
+              >
+                🗑️
+              </button>
+              <button 
+                className={styles.closeChatButton}
+                onClick={() => setShowChatPanel(false)}
+              >
+                ×
+              </button>
+            </div>
           </div>
           
           <div className={styles.chatMessages}>
@@ -356,6 +447,15 @@ function ActivityRecord() {
                 </div>
               </div>
             ))}
+            {isLoadingChat && (
+              <div className={`${styles.chatMessage} ${styles.aiMessage}`}>
+                <div className={styles.typingIndicator}>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            )}
             <div ref={chatEndRef}></div>
           </div>
           
@@ -366,8 +466,13 @@ function ActivityRecord() {
               onChange={(e) => setMessageInput(e.target.value)}
               placeholder="输入你的问题..."
               className={styles.chatInput}
+              disabled={isLoadingChat}
             />
-            <button type="submit" className={styles.sendButton}>
+            <button 
+              type="submit" 
+              className={styles.sendButton}
+              disabled={isLoadingChat || !messageInput.trim()}
+            >
               发送
             </button>
           </form>
@@ -417,7 +522,7 @@ function ActivityRecord() {
       
       <main className={styles.content}>
         <h1 className={styles.title}>注意力随手记</h1>
-        <p className={styles.date}>{format(currentDate, 'yyyy年MM月dd日')}</p>
+        <p className={styles.date}>{format(currentDate, 'yyyy年MM月dd日 EEEE', { locale: zhCN })}</p>
         
         <div className={styles.recordsList}>
           {records.map(record => (
@@ -465,9 +570,35 @@ function ActivityRecord() {
                     <p className={styles.evaluationText}>{record.selfEvaluation}</p>
                   </div>
                   
-                  <div className={styles.aiSuggestion}>
-                    <h4 className={styles.suggestionTitle}>AI建议</h4>
-                    <p className={styles.suggestionText}>{record.aiSuggestion}</p>
+                  <div className={styles.aiAnalysis}>
+                    {record.aiSuggestion && !record.suggestions && (
+                      <div className={styles.aiSuggestion}>
+                        <h4 className={styles.suggestionTitle}>AI建议</h4>
+                        <p className={styles.suggestionText}>{record.aiSuggestion}</p>
+                      </div>
+                    )}
+                    
+                    {record.suggestions && (
+                      <div className={styles.suggestions}>
+                        <h4 className={styles.suggestionTitle}>AI建议</h4>
+                        <ul className={styles.suggestionList}>
+                          {record.suggestions.map((suggestion, index) => (
+                            <li key={index} className={styles.suggestionItem}>{suggestion}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    
+                    {record.analysis && (
+                      <div className={styles.detailedAnalysis}>
+                        <h4 className={styles.analysisTitle}>详细分析</h4>
+                        <div className={styles.analysisItems}>
+                          <p><strong>三角形匹配度:</strong> {record.analysis.triangleMatch}</p>
+                          <p><strong>时间安排合理性:</strong> {record.analysis.timeRationality}</p>
+                          <p><strong>用户体验与感受:</strong> {record.analysis.userExperience || record.analysis.historicalComparison}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -643,8 +774,8 @@ function ActivityRecord() {
               </div>
               
               <div className={styles.formFooter}>
-                <button type="submit" className={styles.submitButton}>
-                  {isEditing ? '保存修改' : '添加记录'}
+                <button type="submit" className={styles.submitButton} disabled={isAnalyzing}>
+                  {isAnalyzing ? '分析中...' : (isEditing ? '保存修改' : '添加记录')}
                 </button>
               </div>
             </form>
