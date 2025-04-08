@@ -1,9 +1,12 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import styles from '../styles/WelcomePage.module.css';
+import NameInput from '../components/NameInput';
+import { useUser } from '../contexts/UserContext';
 
 function WelcomePage() {
   const navigate = useNavigate();
+  const { userName } = useUser();
 
   return (
     <div className={styles.container}>
@@ -12,7 +15,9 @@ function WelcomePage() {
           <circle cx="12" cy="12" r="9" stroke="#333" strokeWidth="1.5"/>
           <path d="M12 7V12L15.5 14.5" stroke="#333" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
-        <h1 className={styles.title}>Dhの注意力清单</h1>
+        <h1 className={styles.title}>
+          {userName ? `${userName}の注意力清单` : '注意力清单'}
+        </h1>
         <p className={styles.subtitle}>
           管理注意力，提高生产力
         </p>
@@ -45,6 +50,9 @@ function WelcomePage() {
           </div>
         </div>
       </div>
+
+      {/* 名字输入弹窗 */}
+      <NameInput />
     </div>
   );
 }

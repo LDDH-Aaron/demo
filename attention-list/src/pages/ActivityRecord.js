@@ -5,6 +5,7 @@ import styles from '../styles/ActivityRecord.module.css';
 import { analyzeRecord } from '../services/aiService';
 import { sendChatMessage } from '../services/chatService';
 import ClearStorage from './ClearStorage';
+import { useNavigate } from 'react-router-dom';
 
 function ActivityRecord() {
   const [records, setRecords] = useState([]);
@@ -43,6 +44,8 @@ function ActivityRecord() {
   
   const triangleRef = useRef(null);
   const chatEndRef = useRef(null);
+  
+  const navigate = useNavigate();
   
   // 滚动到最新消息
   useEffect(() => {
@@ -383,6 +386,43 @@ function ActivityRecord() {
       ]);
       localStorage.removeItem('chatMessages');
     }
+  };
+  
+  const handleEndDay = () => {
+    // 确保数据已经保存
+    if (records.length > 0) {
+      localStorage.setItem('attentionRecords', JSON.stringify(records));
+    }
+    
+    // 获取完整的注意力三角形数据
+    const triangleData = {
+      tasks: [
+        localStorage.getItem('task1') || '',
+        localStorage.getItem('task2') || '',
+        localStorage.getItem('task3') || ''
+      ],
+      highEnergy: {
+        title: localStorage.getItem('highEnergyTask') || '',
+        description: localStorage.getItem('highEnergyDesc') || ''
+      },
+      mediumEnergy1: {
+        title: localStorage.getItem('mediumEnergy1') || '',
+        description: localStorage.getItem('mediumEnergy1Desc') || '' 
+      },
+      mediumEnergy2: {
+        title: localStorage.getItem('mediumEnergy2') || '',
+        description: localStorage.getItem('mediumEnergy2Desc') || ''
+      },
+      lowEnergy1: localStorage.getItem('lowEnergy1') || '',
+      lowEnergy2: localStorage.getItem('lowEnergy2') || '',
+      lowEnergy3: localStorage.getItem('lowEnergy3') || ''
+    };
+    
+    console.log('准备生成报告，三角形数据:', triangleData);
+    console.log('今日记录数据:', records);
+    
+    localStorage.setItem('attentionTriangle', JSON.stringify(triangleData));
+    navigate('/daily-report');
   };
   
   return (
@@ -782,6 +822,13 @@ function ActivityRecord() {
           </div>
         </div>
       )}
+      
+      <button
+        className={styles.endDayButton}
+        onClick={handleEndDay}
+      >
+        结束今日记录
+      </button>
     </div>
   );
 }

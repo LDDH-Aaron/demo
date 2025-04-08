@@ -2,37 +2,49 @@ import React from 'react';
 
 const ClearStorage = () => {
   const handleClearRecords = () => {
-    if (window.confirm('确定要清除所有记录吗？这将删除所有现有的注意力记录。')) {
-      localStorage.removeItem('attentionRecords');
-      alert('记录已清除，请刷新页面。');
+    if (window.confirm('确定要清除所有记录吗？此操作不可恢复。')) {
+      try {
+        localStorage.removeItem('attentionRecords');
+        localStorage.removeItem('chatMessages');
+        alert('所有记录已清除，页面将刷新。');
+        window.location.reload();
+      } catch (error) {
+        console.error('清除记录时出错:', error);
+        alert('清除记录时出错，请重试。');
+      }
     }
   };
 
   return (
-    <div style={{ 
-      position: 'fixed', 
-      bottom: '10px', 
-      left: '10px', 
-      zIndex: 1000,
-      padding: '5px',
-      background: '#f8f8f8',
-      border: '1px solid #ddd',
-      borderRadius: '4px'
-    }}>
-      <button 
-        onClick={handleClearRecords}
-        style={{
-          background: 'white',
-          border: '1px solid #666',
-          borderRadius: '4px',
-          padding: '5px 10px',
-          cursor: 'pointer',
-          fontSize: '12px'
-        }}
-      >
-        清除所有记录
-      </button>
-    </div>
+    <button
+      onClick={handleClearRecords}
+      style={{
+        position: 'fixed',
+        bottom: '2rem',
+        left: '2rem',
+        padding: '0.75rem 1.5rem',
+        backgroundColor: '#1a1a1a',
+        color: 'white',
+        border: 'none',
+        borderRadius: '25px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        zIndex: 1000,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+        transition: 'all 0.3s ease',
+        fontWeight: 500
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.backgroundColor = '#333';
+        e.currentTarget.style.transform = 'scale(1.05)';
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style.backgroundColor = '#1a1a1a';
+        e.currentTarget.style.transform = 'scale(1)';
+      }}
+    >
+      清除所有记录
+    </button>
   );
 };
 
