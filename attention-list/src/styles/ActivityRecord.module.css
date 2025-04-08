@@ -691,8 +691,8 @@
   cursor: pointer;
   z-index: 50;
   background-color: rgba(255, 255, 255, 0.95);
-  width: 5.5rem;
-  height: 5.5rem;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -709,8 +709,8 @@
 
 .robotIcon {
   position: relative;
-  width: 60px;
-  height: 60px;
+  width: 55px;
+  height: 55px;
   transition: transform 0.3s ease;
   display: flex;
   align-items: center;
@@ -736,9 +736,9 @@
   top: 50%;
   right: 5rem;
   transform: translateY(-50%);
-  width: 450px;
+  width: 400px;
   max-width: 95vw;
-  height: 650px;
+  height: 550px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -996,6 +996,16 @@
 }
 
 @media (max-width: 768px) {
+  .aiChatIndicator {
+    width: 85px;
+    height: 85px;
+  }
+
+  .robotIcon {
+    width: 45px;
+    height: 45px;
+  }
+
   .chatPanel {
     top: 5rem;
     right: 1.5rem;
